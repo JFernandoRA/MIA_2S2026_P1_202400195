@@ -82,9 +82,9 @@ inline ParsedCommand parseCommand(const std::string& rawLine) {
         std::string body = tok.substr(1); // quita el '-'
         size_t eqPos = body.find('=');
         if (eqPos == std::string::npos) {
-            result.ok = false;
-            result.error = "Parámetro mal formado: \"" + tok + "\" (falta '=')";
-            return result;
+            // bandera sin valor, ej. -r o -p
+            result.params[toLower(body)] = "";
+            continue;
         }
         std::string key = toLower(body.substr(0, eqPos));
         std::string value = body.substr(eqPos + 1);

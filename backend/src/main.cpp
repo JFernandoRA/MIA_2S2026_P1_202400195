@@ -2,6 +2,9 @@
 #include "json.hpp"
 #include "parser.hpp"
 #include "commands.hpp"
+#include "ext2_commands.hpp"
+#include "account_commands.hpp"
+#include "path_commands.hpp"
 #include <sstream>
 #include <iostream>
 
@@ -14,6 +17,17 @@ std::string dispatch(const ParsedCommand& cmd) {
     if (cmd.name == "fdisk")   return cmdFdisk(cmd).message;
     if (cmd.name == "mount")   return cmdMount(cmd).message;
     if (cmd.name == "mounted") return cmdMounted(cmd).message;
+    if (cmd.name == "mkfs")    return cmdMkfs(cmd).message;
+    if (cmd.name == "login")   return cmdLogin(cmd).message;
+    if (cmd.name == "logout")  return cmdLogout(cmd).message;
+    if (cmd.name == "mkgrp")   return cmdMkgrp(cmd).message;
+    if (cmd.name == "rmgrp")   return cmdRmgrp(cmd).message;
+    if (cmd.name == "mkusr")   return cmdMkusr(cmd).message;
+    if (cmd.name == "rmusr")   return cmdRmusr(cmd).message;
+    if (cmd.name == "chgrp")   return cmdChgrp(cmd).message;
+    if (cmd.name == "cat")     return cmdCat(cmd).message;
+    if (cmd.name == "mkfile")  return cmdMkfile(cmd).message;
+    if (cmd.name == "mkdir")   return cmdMkdir(cmd).message;
 
     return "ERROR: comando \"" + cmd.name + "\" no reconocido";
 }
