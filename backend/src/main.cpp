@@ -5,6 +5,7 @@
 #include "ext2_commands.hpp"
 #include "account_commands.hpp"
 #include "path_commands.hpp"
+#include "rep_commands.hpp"
 #include <sstream>
 #include <iostream>
 
@@ -28,6 +29,7 @@ std::string dispatch(const ParsedCommand& cmd) {
     if (cmd.name == "cat")     return cmdCat(cmd).message;
     if (cmd.name == "mkfile")  return cmdMkfile(cmd).message;
     if (cmd.name == "mkdir")   return cmdMkdir(cmd).message;
+    if (cmd.name == "rep")     return cmdRep(cmd).message;
 
     return "ERROR: comando \"" + cmd.name + "\" no reconocido";
 }
