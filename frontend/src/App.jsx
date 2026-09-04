@@ -142,10 +142,6 @@ function App() {
               <dt>rep</dt><dd>-name -path -id -path_file_ls</dd>
             </dl>
           </div>
-          <div className="sidebar-block">
-            <h2>notas</h2>
-            <p className="note">El backend corre en <code>localhost:8080</code>. Levántalo con <code>./server</code> desde <code>backend/</code> antes de ejecutar comandos aquí.</p>
-          </div>
         </aside>
       </main>
     </div>
