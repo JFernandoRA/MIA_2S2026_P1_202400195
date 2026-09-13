@@ -7,6 +7,8 @@
 #include <cstring>
 
 inline CmdResult cmdMkfs(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"id", "type"}, perr)) return {false, "MKFS: " + perr};
     if (!hasParam(cmd, "id")) return {false, "MKFS: falta el parámetro obligatorio -id"};
     std::string id = getParam(cmd, "id");
 

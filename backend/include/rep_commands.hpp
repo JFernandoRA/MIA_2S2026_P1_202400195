@@ -9,6 +9,7 @@
 #include <sstream>
 #include <vector>
 #include <map>
+#include <set>
 #include <algorithm>
 
 // -------- helpers comunes --------
@@ -202,26 +203,64 @@ inline CmdResult repInode(FSContext& ctx, const std::string& outPath) {
 
     std::ostringstream dot;
     dot << "digraph G {\nrankdir=LR\nnode [shape=plain]\n";
-    std::string prevNode;
+
     for (int idx : inv.usedInodes) {
         Inode inode;
         readStruct(ctx.diskPath, inodeOffset(ctx, idx), inode);
         std::string nodeName = "n" + std::to_string(idx);
+
         dot << nodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
-        dot << "<tr><td bgcolor=\"#2980b9\" colspan=\"2\"><font color=\"white\">Inodo " << idx << "</font></td></tr>";
+        dot << "<tr><td bgcolor=\"#3498db\" colspan=\"2\"><font color=\"white\"><b>Inodo " << idx << "</b></font></td></tr>";
         dot << "<tr><td>i_uid</td><td>" << inode.i_uid << "</td></tr>";
         dot << "<tr><td>i_gid</td><td>" << inode.i_gid << "</td></tr>";
         dot << "<tr><td>i_s</td><td>" << inode.i_s << "</td></tr>";
         dot << "<tr><td>i_atime</td><td>" << formatTime(inode.i_atime) << "</td></tr>";
+        dot << "<tr><td>i_type</td><td>" << (inode.i_type == '0' ? "Directorio" : "Archivo") << "</td></tr>";
         for (int b = 0; b < 15; b++) {
-            if (inode.i_block[b] == -1) continue;
-            dot << "<tr><td>i_block[" << b << "]</td><td>" << inode.i_block[b] << "</td></tr>";
+            dot << "<tr><td>i_block[" << b << "]</td><td>";
+            if (inode.i_block[b] == -1) dot << "-1"; else dot << "Bloque " << inode.i_block[b];
+            dot << "</td></tr>";
         }
-        dot << "<tr><td>i_type</td><td>" << inode.i_type << "</td></tr>";
         dot << "<tr><td>i_perm</td><td>" << inode.i_perm[0] << inode.i_perm[1] << inode.i_perm[2] << "</td></tr>";
         dot << "</table>>]\n";
-        if (!prevNode.empty()) dot << prevNode << " -> " << nodeName << "\n";
-        prevNode = nodeName;
+
+        // Un nodo de bloque por CADA slot ocupado (0 a 11, directos), sin deduplicar
+        // entre inodos: si el mismo número de bloque apareciera referenciado por dos
+        // inodos (anomalía de asignación), ambas referencias se dibujan por separado
+        // para poder detectarlo a simple vista. Se agrupan en la misma fila (rank)
+        // que su inodo dueño.
+        std::string sameRank = "{rank=same; " + nodeName;
+        bool anyBlock = false;
+        for (int b = 0; b < 12; b++) {
+            if (inode.i_block[b] == -1) continue;
+            anyBlock = true;
+            std::string blockNodeName = "ib_" + std::to_string(idx) + "_" + std::to_string(b);
+            sameRank += "; " + blockNodeName;
+            dot << nodeName << ":e -> " << blockNodeName << ":w\n";
+
+            if (inode.i_type == '0') {
+                FolderBlock fb;
+                readStruct(ctx.diskPath, blockOffset(ctx, inode.i_block[b]), fb);
+                dot << blockNodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
+                dot << "<tr><td bgcolor=\"#2ecc71\" colspan=\"2\"><b>Bloque " << inode.i_block[b] << " (Carpeta)</b></td></tr>";
+                for (auto& e : fb.b_content) {
+                    std::string ename(e.b_name);
+                    if (e.b_inodo == -1 || ename.empty()) dot << "<tr><td>-</td><td>-1</td></tr>";
+                    else dot << "<tr><td>" << ename << "</td><td>Inodo " << e.b_inodo << "</td></tr>";
+                }
+                dot << "</table>>]\n";
+            } else {
+                FileBlock fbk;
+                readStruct(ctx.diskPath, blockOffset(ctx, inode.i_block[b]), fbk);
+                std::string content(fbk.b_content, strnlen(fbk.b_content, 64));
+                dot << blockNodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
+                dot << "<tr><td bgcolor=\"#f1c40f\"><b>Bloque " << inode.i_block[b] << " (Archivo)</b></td></tr>";
+                dot << "<tr><td>" << content << "</td></tr>";
+                dot << "</table>>]\n";
+            }
+        }
+        sameRank += ";}\n";
+        if (anyBlock) dot << sameRank;
     }
     dot << "}\n";
 
@@ -270,39 +309,86 @@ inline CmdResult repBlock(FSContext& ctx, const std::string& outPath) {
 }
 
 // -------- REPORTE TREE --------
-inline void buildTreeDot(FSContext& ctx, int inodeIndex, std::ostringstream& dot, int depth = 0) {
-    if (depth > 32) return;
+// Fiel al modelo real EXT2: cada inodo muestra sus 15 punteros i_block, y cada
+// bloque referenciado se dibuja como su propio nodo (inodo -> bloque -> inodo...).
+inline void renderTreeInode(FSContext& ctx, int inodeIndex, const std::string& displayName,
+                             std::ostringstream& dot, std::set<int>& seenInodes) {
+    if (seenInodes.count(inodeIndex)) return;
+    seenInodes.insert(inodeIndex);
+
     Inode inode;
     readStruct(ctx.diskPath, inodeOffset(ctx, inodeIndex), inode);
-    std::string nodeName = "t" + std::to_string(inodeIndex);
+    std::string nodeName = "inode" + std::to_string(inodeIndex);
 
     dot << nodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
-    dot << "<tr><td bgcolor=\"#8e44ad\" colspan=\"2\"><font color=\"white\">Inodo " << inodeIndex
-        << (inode.i_type == '0' ? " (carpeta)" : " (archivo)") << "</font></td></tr>";
-    dot << "<tr><td>i_uid</td><td>" << inode.i_uid << "</td></tr>";
-    dot << "<tr><td>i_s</td><td>" << inode.i_s << "</td></tr>";
+    dot << "<tr><td bgcolor=\"#3498db\" colspan=\"2\"><font color=\"white\"><b>Inodo " << inodeIndex
+        << " (" << displayName << ")</b></font></td></tr>";
+    dot << "<tr><td>i_type</td><td>" << (inode.i_type == '0' ? "Directorio" : "Archivo") << "</td></tr>";
+    for (int b = 0; b < 15; b++) {
+        dot << "<tr><td>i_block[" << b << "]</td><td>";
+        if (inode.i_block[b] == -1) dot << "-1"; else dot << "Bloque " << inode.i_block[b];
+        dot << "</td></tr>";
+    }
     dot << "</table>>]\n";
 
-    if (inode.i_type == '0') {
-        for (int i = 0; i < 12; i++) {
-            if (inode.i_block[i] == -1) continue;
-            FolderBlock fb;
-            readStruct(ctx.diskPath, blockOffset(ctx, inode.i_block[i]), fb);
-            for (auto& e : fb.b_content) {
-                if (e.b_inodo == -1) continue;
-                std::string name(e.b_name);
-                if (name == "." || name == "..") continue;
-                dot << nodeName << " -> t" << e.b_inodo << " [label=\"" << name << "\"]\n";
-                buildTreeDot(ctx, e.b_inodo, dot, depth + 1);
+    if (inode.i_type != '0') return; // archivo: sus bloques se dibujan pero no tienen hijos
+
+    for (int b = 0; b < 12; b++) {
+        if (inode.i_block[b] == -1) continue;
+        dot << nodeName << ":e -> block" << inode.i_block[b] << ":w\n";
+        if (seenInodes.count(-1000 - inode.i_block[b])) continue; // bloque ya dibujado (marca aparte)
+        seenInodes.insert(-1000 - inode.i_block[b]);
+
+        FolderBlock fb;
+        readStruct(ctx.diskPath, blockOffset(ctx, inode.i_block[b]), fb);
+        std::string blockNode = "block" + std::to_string(inode.i_block[b]);
+        dot << blockNode << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
+        dot << "<tr><td bgcolor=\"#2ecc71\" colspan=\"2\"><b>Bloque " << inode.i_block[b] << " (Carpeta)</b></td></tr>";
+        for (auto& e : fb.b_content) {
+            std::string name(e.b_name);
+            if (e.b_inodo == -1 || name.empty()) {
+                dot << "<tr><td>-</td><td>-1</td></tr>";
+            } else {
+                dot << "<tr><td>" << name << "</td><td>Inodo " << e.b_inodo << "</td></tr>";
             }
+        }
+        dot << "</table>>]\n";
+
+        for (auto& e : fb.b_content) {
+            std::string name(e.b_name);
+            if (e.b_inodo == -1 || name == "." || name == "..") continue;
+            dot << blockNode << ":e -> inode" << e.b_inodo << ":w\n";
+            renderTreeInode(ctx, e.b_inodo, name, dot, seenInodes);
+        }
+    }
+}
+
+inline void renderTreeFileBlocks(FSContext& ctx, std::ostringstream& dot, std::set<int>& seenInodes) {
+    // Segunda pasada: dibuja el contenido de los bloques de archivo referenciados.
+    for (int inodeIdx : std::vector<int>(seenInodes.begin(), seenInodes.end())) {
+        if (inodeIdx < 0) continue;
+        Inode inode;
+        readStruct(ctx.diskPath, inodeOffset(ctx, inodeIdx), inode);
+        if (inode.i_type != '1') continue;
+        for (int b = 0; b < 12; b++) {
+            if (inode.i_block[b] == -1) continue;
+            FileBlock fbk;
+            readStruct(ctx.diskPath, blockOffset(ctx, inode.i_block[b]), fbk);
+            std::string content(fbk.b_content, strnlen(fbk.b_content, 64));
+            dot << "block" << inode.i_block[b] << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
+            dot << "<tr><td bgcolor=\"#f1c40f\"><b>Bloque " << inode.i_block[b] << " (Archivo)</b></td></tr>";
+            dot << "<tr><td>" << content << "</td></tr>";
+            dot << "</table>>]\n";
         }
     }
 }
 
 inline CmdResult repTree(FSContext& ctx, const std::string& outPath) {
     std::ostringstream dot;
-    dot << "digraph G {\nnode [shape=plain]\n";
-    buildTreeDot(ctx, 0, dot);
+    dot << "digraph G {\nrankdir=LR\nnode [shape=plain]\n";
+    std::set<int> seenInodes;
+    renderTreeInode(ctx, 0, "/", dot, seenInodes);
+    renderTreeFileBlocks(ctx, dot, seenInodes);
     dot << "}\n";
 
     ensureParentDirs(outPath);
@@ -378,11 +464,14 @@ inline CmdResult repLs(FSContext& ctx, const std::string& folderPath, const std:
 
 // -------- Dispatcher --------
 inline CmdResult cmdRep(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"name", "path", "id", "path_file_ls"}, perr)) return {false, "REP: " + perr};
     if (!hasParam(cmd, "name")) return {false, "REP: falta el parámetro obligatorio -name"};
     if (!hasParam(cmd, "path")) return {false, "REP: falta el parámetro obligatorio -path"};
     if (!hasParam(cmd, "id"))   return {false, "REP: falta el parámetro obligatorio -id"};
 
     std::string name = toLower(getParam(cmd, "name"));
+    if (name == "bm_bloc") name = "bm_block"; // alias usado en el enunciado
     std::string outPath = getParam(cmd, "path");
     std::string id = getParam(cmd, "id");
 

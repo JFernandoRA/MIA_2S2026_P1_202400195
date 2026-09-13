@@ -8,6 +8,8 @@
 
 // ---------------------- MKFILE ----------------------
 inline CmdResult cmdMkfile(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"path", "r", "size", "cont"}, perr)) return {false, "MKFILE: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "MKFILE: no hay una sesión activa, debe iniciar sesión (login)"};
     if (!hasParam(cmd, "path")) return {false, "MKFILE: falta el parámetro obligatorio -path"};
@@ -83,6 +85,8 @@ inline CmdResult cmdMkfile(const ParsedCommand& cmd) {
 
 // ---------------------- MKDIR ----------------------
 inline CmdResult cmdMkdir(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"path", "p"}, perr)) return {false, "MKDIR: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "MKDIR: no hay una sesión activa, debe iniciar sesión (login)"};
     if (!hasParam(cmd, "path")) return {false, "MKDIR: falta el parámetro obligatorio -path"};

@@ -20,6 +20,8 @@ inline bool saveUsersFile(FSContext& ctx, int inodeIndex, Inode& inode, const st
 
 // ---------------------- LOGIN ----------------------
 inline CmdResult cmdLogin(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"user", "pass", "id"}, perr)) return {false, "LOGIN: " + perr};
     if (!hasParam(cmd, "user")) return {false, "LOGIN: falta el parámetro obligatorio -user"};
     if (!hasParam(cmd, "pass")) return {false, "LOGIN: falta el parámetro obligatorio -pass"};
     if (!hasParam(cmd, "id"))   return {false, "LOGIN: falta el parámetro obligatorio -id"};
@@ -55,7 +57,9 @@ inline CmdResult cmdLogin(const ParsedCommand& cmd) {
 }
 
 // ---------------------- LOGOUT ----------------------
-inline CmdResult cmdLogout(const ParsedCommand&) {
+inline CmdResult cmdLogout(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {}, perr)) return {false, "LOGOUT: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "LOGOUT: no hay ninguna sesión activa"};
     sess = Session();
@@ -77,6 +81,8 @@ inline FSContext requireSession(CmdResult& errOut) {
 
 // ---------------------- MKGRP ----------------------
 inline CmdResult cmdMkgrp(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"name"}, perr)) return {false, "MKGRP: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "MKGRP: no hay una sesión activa, debe iniciar sesión (login)"};
     if (sess.user != "root") return {false, "MKGRP: solo el usuario root puede ejecutar este comando"};
@@ -104,6 +110,8 @@ inline CmdResult cmdMkgrp(const ParsedCommand& cmd) {
 
 // ---------------------- RMGRP ----------------------
 inline CmdResult cmdRmgrp(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"name"}, perr)) return {false, "RMGRP: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "RMGRP: no hay una sesión activa, debe iniciar sesión (login)"};
     if (sess.user != "root") return {false, "RMGRP: solo el usuario root puede ejecutar este comando"};
@@ -127,6 +135,8 @@ inline CmdResult cmdRmgrp(const ParsedCommand& cmd) {
 
 // ---------------------- MKUSR ----------------------
 inline CmdResult cmdMkusr(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"user", "pass", "grp"}, perr)) return {false, "MKUSR: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "MKUSR: no hay una sesión activa, debe iniciar sesión (login)"};
     if (sess.user != "root") return {false, "MKUSR: solo el usuario root puede ejecutar este comando"};
@@ -165,6 +175,8 @@ inline CmdResult cmdMkusr(const ParsedCommand& cmd) {
 
 // ---------------------- RMUSR ----------------------
 inline CmdResult cmdRmusr(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"user"}, perr)) return {false, "RMUSR: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "RMUSR: no hay una sesión activa, debe iniciar sesión (login)"};
     if (sess.user != "root") return {false, "RMUSR: solo el usuario root puede ejecutar este comando"};
@@ -188,6 +200,8 @@ inline CmdResult cmdRmusr(const ParsedCommand& cmd) {
 
 // ---------------------- CHGRP ----------------------
 inline CmdResult cmdChgrp(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {"user", "grp"}, perr)) return {false, "CHGRP: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "CHGRP: no hay una sesión activa, debe iniciar sesión (login)"};
     if (sess.user != "root") return {false, "CHGRP: solo el usuario root puede ejecutar este comando"};
@@ -216,6 +230,8 @@ inline CmdResult cmdChgrp(const ParsedCommand& cmd) {
 
 // ---------------------- CAT ----------------------
 inline CmdResult cmdCat(const ParsedCommand& cmd) {
+    std::string perr;
+    if (!validateParams(cmd, {}, perr, "file")) return {false, "CAT: " + perr};
     Session& sess = currentSession();
     if (!sess.active) return {false, "CAT: no hay una sesión activa, debe iniciar sesión (login)"};
 

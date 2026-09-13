@@ -103,3 +103,21 @@ inline std::string getParam(const ParsedCommand& cmd, const std::string& key, co
     auto it = cmd.params.find(key);
     return it != cmd.params.end() ? it->second : def;
 }
+
+// Valida que todos los parámetros recibidos estén en la lista de permitidos.
+// allowedPrefixes permite parámetros dinámicos tipo file1, file2 (ver CAT).
+inline bool validateParams(const ParsedCommand& cmd, const std::vector<std::string>& allowed,
+                            std::string& err, const std::string& dynamicPrefix = "") {
+    for (auto& kv : cmd.params) {
+        bool ok = std::find(allowed.begin(), allowed.end(), kv.first) != allowed.end();
+        if (!ok && !dynamicPrefix.empty() && kv.first.rfind(dynamicPrefix, 0) == 0) {
+            std::string suffix = kv.first.substr(dynamicPrefix.size());
+            ok = !suffix.empty() && std::all_of(suffix.begin(), suffix.end(), ::isdigit);
+        }
+        if (!ok) {
+            err = "parámetro no reconocido: -" + kv.first;
+            return false;
+        }
+    }
+    return true;
+}
