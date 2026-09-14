@@ -43,7 +43,7 @@ inline CmdResult repMbr(const std::string& diskPath, const std::string& outPath)
         dot << "<tr><td>part_fit</td><td>" << p.part_fit << "</td></tr>";
         dot << "<tr><td>part_start</td><td>" << p.part_start << "</td></tr>";
         dot << "<tr><td>part_size</td><td>" << p.part_s << "</td></tr>";
-        dot << "<tr><td>part_name</td><td>" << std::string(p.part_name) << "</td></tr>";
+        dot << "<tr><td>part_name</td><td>" << htmlEscape(std::string(p.part_name)) << "</td></tr>";
 
         if (p.part_type == 'E') {
             int cursor = p.part_start;
@@ -56,7 +56,7 @@ inline CmdResult repMbr(const std::string& diskPath, const std::string& outPath)
                 dot << "<tr><td>part_start</td><td>" << ebr.part_start << "</td></tr>";
                 dot << "<tr><td>part_s</td><td>" << ebr.part_s << "</td></tr>";
                 dot << "<tr><td>part_next</td><td>" << ebr.part_next << "</td></tr>";
-                dot << "<tr><td>part_name</td><td>" << std::string(ebr.part_name) << "</td></tr>";
+                dot << "<tr><td>part_name</td><td>" << htmlEscape(std::string(ebr.part_name)) << "</td></tr>";
                 cursor = ebr.part_next;
             }
         }
@@ -88,7 +88,7 @@ inline CmdResult repDisk(const std::string& diskPath, const std::string& outPath
     for (auto& u : used) {
         Partition& p = mbr.mbr_partitions[u.second];
         if (p.part_start > cursor) segs.push_back({"Libre", p.part_start - cursor, "#ecf0f1"});
-        std::string label = (p.part_type == 'E' ? "Extendida " : "Primaria ") + std::string(p.part_name);
+        std::string label = (p.part_type == 'E' ? "Extendida " : "Primaria ") + htmlEscape(std::string(p.part_name));
         segs.push_back({label, p.part_s, p.part_type == 'E' ? "#e67e22" : "#3498db"});
         cursor = p.part_start + p.part_s;
     }
@@ -196,6 +196,11 @@ inline void collectInventory(FSContext& ctx, int inodeIndex, FSInventory& inv, i
 }
 
 // -------- REPORTE INODE --------
+// Muestra únicamente los inodos usados (uno por caja), encadenados en el orden
+// en que fueron encontrados al recorrer el árbol, tal como en el ejemplo del
+// enunciado (Inodo 1 -> Inodo 5 -> ...). El contenido de los bloques se
+// reporta aparte, en el reporte "block", para evitar duplicar información y
+// que la imagen crezca sin control.
 inline CmdResult repInode(FSContext& ctx, const std::string& outPath) {
     FSInventory inv;
     collectInventory(ctx, 0, inv);
@@ -204,63 +209,34 @@ inline CmdResult repInode(FSContext& ctx, const std::string& outPath) {
     std::ostringstream dot;
     dot << "digraph G {\nrankdir=LR\nnode [shape=plain]\n";
 
+    std::string prevNode;
     for (int idx : inv.usedInodes) {
         Inode inode;
         readStruct(ctx.diskPath, inodeOffset(ctx, idx), inode);
         std::string nodeName = "n" + std::to_string(idx);
+        // Directorio en azul, archivo en rojo (igual que en el reporte tree).
+        std::string headerColor = (inode.i_type == '1') ? "#e74c3c" : "#3498db";
 
         dot << nodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
-        dot << "<tr><td bgcolor=\"#3498db\" colspan=\"2\"><font color=\"white\"><b>Inodo " << idx << "</b></font></td></tr>";
+        dot << "<tr><td bgcolor=\"" << headerColor << "\" colspan=\"2\"><font color=\"white\"><b>Inodo "
+            << idx << "</b></font></td></tr>";
         dot << "<tr><td>i_uid</td><td>" << inode.i_uid << "</td></tr>";
         dot << "<tr><td>i_gid</td><td>" << inode.i_gid << "</td></tr>";
         dot << "<tr><td>i_s</td><td>" << inode.i_s << "</td></tr>";
         dot << "<tr><td>i_atime</td><td>" << formatTime(inode.i_atime) << "</td></tr>";
+        dot << "<tr><td>i_ctime</td><td>" << formatTime(inode.i_ctime) << "</td></tr>";
+        dot << "<tr><td>i_mtime</td><td>" << formatTime(inode.i_mtime) << "</td></tr>";
         dot << "<tr><td>i_type</td><td>" << (inode.i_type == '0' ? "Directorio" : "Archivo") << "</td></tr>";
         for (int b = 0; b < 15; b++) {
             dot << "<tr><td>i_block[" << b << "]</td><td>";
-            if (inode.i_block[b] == -1) dot << "-1"; else dot << "Bloque " << inode.i_block[b];
+            if (inode.i_block[b] == -1) dot << "-1"; else dot << inode.i_block[b];
             dot << "</td></tr>";
         }
         dot << "<tr><td>i_perm</td><td>" << inode.i_perm[0] << inode.i_perm[1] << inode.i_perm[2] << "</td></tr>";
         dot << "</table>>]\n";
 
-        // Un nodo de bloque por CADA slot ocupado (0 a 11, directos), sin deduplicar
-        // entre inodos: si el mismo número de bloque apareciera referenciado por dos
-        // inodos (anomalía de asignación), ambas referencias se dibujan por separado
-        // para poder detectarlo a simple vista. Se agrupan en la misma fila (rank)
-        // que su inodo dueño.
-        std::string sameRank = "{rank=same; " + nodeName;
-        bool anyBlock = false;
-        for (int b = 0; b < 12; b++) {
-            if (inode.i_block[b] == -1) continue;
-            anyBlock = true;
-            std::string blockNodeName = "ib_" + std::to_string(idx) + "_" + std::to_string(b);
-            sameRank += "; " + blockNodeName;
-            dot << nodeName << ":e -> " << blockNodeName << ":w\n";
-
-            if (inode.i_type == '0') {
-                FolderBlock fb;
-                readStruct(ctx.diskPath, blockOffset(ctx, inode.i_block[b]), fb);
-                dot << blockNodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
-                dot << "<tr><td bgcolor=\"#2ecc71\" colspan=\"2\"><b>Bloque " << inode.i_block[b] << " (Carpeta)</b></td></tr>";
-                for (auto& e : fb.b_content) {
-                    std::string ename(e.b_name);
-                    if (e.b_inodo == -1 || ename.empty()) dot << "<tr><td>-</td><td>-1</td></tr>";
-                    else dot << "<tr><td>" << ename << "</td><td>Inodo " << e.b_inodo << "</td></tr>";
-                }
-                dot << "</table>>]\n";
-            } else {
-                FileBlock fbk;
-                readStruct(ctx.diskPath, blockOffset(ctx, inode.i_block[b]), fbk);
-                std::string content(fbk.b_content, strnlen(fbk.b_content, 64));
-                dot << blockNodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
-                dot << "<tr><td bgcolor=\"#f1c40f\"><b>Bloque " << inode.i_block[b] << " (Archivo)</b></td></tr>";
-                dot << "<tr><td>" << content << "</td></tr>";
-                dot << "</table>>]\n";
-            }
-        }
-        sameRank += ";}\n";
-        if (anyBlock) dot << sameRank;
+        if (!prevNode.empty()) dot << prevNode << " -> " << nodeName << "\n";
+        prevNode = nodeName;
     }
     dot << "}\n";
 
@@ -288,14 +264,14 @@ inline CmdResult repBlock(FSContext& ctx, const std::string& outPath) {
             readStruct(ctx.diskPath, blockOffset(ctx, idx), fb);
             for (auto& e : fb.b_content) {
                 if (e.b_inodo == -1) continue;
-                dot << "<tr><td>" << std::string(e.b_name) << "</td><td>" << e.b_inodo << "</td></tr>";
+                dot << "<tr><td>" << htmlEscape(std::string(e.b_name)) << "</td><td>" << e.b_inodo << "</td></tr>";
             }
         } else {
             dot << "<tr><td bgcolor=\"#d35400\"><font color=\"white\">Bloque Archivo " << idx << "</font></td></tr>";
             FileBlock fbk;
             readStruct(ctx.diskPath, blockOffset(ctx, idx), fbk);
             std::string content(fbk.b_content, strnlen(fbk.b_content, 64));
-            dot << "<tr><td>" << content << "</td></tr>";
+            dot << "<tr><td>" << htmlEscape(content) << "</td></tr>";
         }
         dot << "</table>>]\n";
         if (!prevNode.empty()) dot << prevNode << " -> " << nodeName << "\n";
@@ -320,9 +296,11 @@ inline void renderTreeInode(FSContext& ctx, int inodeIndex, const std::string& d
     readStruct(ctx.diskPath, inodeOffset(ctx, inodeIndex), inode);
     std::string nodeName = "inode" + std::to_string(inodeIndex);
 
+    // Directorio en azul, archivo en rojo, igual que en el reporte inode.
+    std::string headerColor = (inode.i_type == '1') ? "#e74c3c" : "#3498db";
     dot << nodeName << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
-    dot << "<tr><td bgcolor=\"#3498db\" colspan=\"2\"><font color=\"white\"><b>Inodo " << inodeIndex
-        << " (" << displayName << ")</b></font></td></tr>";
+    dot << "<tr><td bgcolor=\"" << headerColor << "\" colspan=\"2\"><font color=\"white\"><b>Inodo " << inodeIndex
+        << " (" << htmlEscape(displayName) << ")</b></font></td></tr>";
     dot << "<tr><td>i_type</td><td>" << (inode.i_type == '0' ? "Directorio" : "Archivo") << "</td></tr>";
     for (int b = 0; b < 15; b++) {
         dot << "<tr><td>i_block[" << b << "]</td><td>";
@@ -349,7 +327,7 @@ inline void renderTreeInode(FSContext& ctx, int inodeIndex, const std::string& d
             if (e.b_inodo == -1 || name.empty()) {
                 dot << "<tr><td>-</td><td>-1</td></tr>";
             } else {
-                dot << "<tr><td>" << name << "</td><td>Inodo " << e.b_inodo << "</td></tr>";
+                dot << "<tr><td>" << htmlEscape(name) << "</td><td>Inodo " << e.b_inodo << "</td></tr>";
             }
         }
         dot << "</table>>]\n";
@@ -377,7 +355,7 @@ inline void renderTreeFileBlocks(FSContext& ctx, std::ostringstream& dot, std::s
             std::string content(fbk.b_content, strnlen(fbk.b_content, 64));
             dot << "block" << inode.i_block[b] << " [label=<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">";
             dot << "<tr><td bgcolor=\"#f1c40f\"><b>Bloque " << inode.i_block[b] << " (Archivo)</b></td></tr>";
-            dot << "<tr><td>" << content << "</td></tr>";
+            dot << "<tr><td>" << htmlEscape(content) << "</td></tr>";
             dot << "</table>>]\n";
         }
     }
@@ -387,7 +365,9 @@ inline CmdResult repTree(FSContext& ctx, const std::string& outPath) {
     std::ostringstream dot;
     dot << "digraph G {\nrankdir=LR\nnode [shape=plain]\n";
     std::set<int> seenInodes;
-    renderTreeInode(ctx, 0, "/", dot, seenInodes);
+    // La raíz se rotula " / " (con espacios) para que coincida con el formato
+    // esperado de este reporte: "Inodo 0 ( / )".
+    renderTreeInode(ctx, 0, " / ", dot, seenInodes);
     renderTreeFileBlocks(ctx, dot, seenInodes);
     dot << "}\n";
 
@@ -452,7 +432,7 @@ inline CmdResult repLs(FSContext& ctx, const std::string& folderPath, const std:
                 << "</td><td>" << entryInode.i_s
                 << "</td><td>" << formatTime(entryInode.i_mtime)
                 << "</td><td>" << (entryInode.i_type == '0' ? "Carpeta" : "Archivo")
-                << "</td><td>" << name << "</td></tr>";
+                << "</td><td>" << htmlEscape(name) << "</td></tr>";
         }
     }
     dot << "</table>>]\n}\n";

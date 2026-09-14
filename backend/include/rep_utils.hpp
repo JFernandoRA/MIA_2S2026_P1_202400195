@@ -46,6 +46,31 @@ inline std::string groupnameFromId(std::vector<UserRecord>& records, int gid) {
     return "?";
 }
 
+// Escapa texto para insertarlo de forma segura dentro de una celda de una
+// tabla HTML-like de Graphviz (las que usan los reportes rep -name=...).
+// Sin esto, un nombre de archivo/carpeta o el CONTENIDO de un archivo que el
+// usuario cargue con mkfile -cont=... puede traer '<', '>', '&' o '"' (muy
+// común en código fuente, HTML, XML, JSON) y eso rompe el parseo del .dot:
+// el reporte no se genera, o se genera pero recortado/corrupto a partir de
+// ese punto. También sustituye bytes de control no imprimibles (que podrían
+// venir de un archivo binario) para que graphviz no falle al interpretarlos.
+inline std::string htmlEscape(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (unsigned char c : raw) {
+        switch (c) {
+            case '&':  out += "&amp;";  break;
+            case '<':  out += "&lt;";   break;
+            case '>':  out += "&gt;";   break;
+            case '"':  out += "&quot;"; break;
+            default:
+                if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') out += '.';
+                else out += (char)c;
+        }
+    }
+    return out;
+}
+
 inline std::string formatTime(time_t t) {
     if (t == 0) return "-";
     char buf[32];
