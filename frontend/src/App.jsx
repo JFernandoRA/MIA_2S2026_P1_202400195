@@ -14,6 +14,7 @@ function App() {
   const [running, setRunning] = useState(false)
   const [connected, setConnected] = useState(null)
   const [lastFileName, setLastFileName] = useState('')
+  const [stats, setStats] = useState(null)
   const fileInputRef = useRef(null)
 
   async function checkConnection() {
@@ -38,8 +39,12 @@ function App() {
       const data = await res.json()
       setConnected(true)
       setOutput((prev) => (prev ? prev + '\n' : '') + (data.output || data.error || ''))
+      if (typeof data.total === 'number') {
+        setStats({ ok: data.ok, errors: data.errors, total: data.total })
+      }
     } catch (err) {
       setConnected(false)
+      setStats(null)
       setOutput((prev) => (prev ? prev + '\n' : '') + `# no se pudo conectar con ${API_URL} — ¿está corriendo ./server?\n`)
     } finally {
       setRunning(false)
@@ -50,6 +55,7 @@ function App() {
     setInput('')
     setOutput('')
     setLastFileName('')
+    setStats(null)
   }
 
   function handleFileChoose() {
@@ -124,6 +130,13 @@ function App() {
           <div className="pane">
             <div className="pane-head">
               <span>salida</span>
+              {stats && (
+                <div className="stats">
+                  <span className="stat stat-ok">{stats.ok} exitosos</span>
+                  <span className="stat stat-err">{stats.errors} con error</span>
+                  <span className="stat">{stats.total} en total</span>
+                </div>
+              )}
             </div>
             <pre className="editor output">{output || '# los resultados de tus comandos aparecerán aquí'}</pre>
           </div>
@@ -141,6 +154,10 @@ function App() {
               <dt>mkfile</dt><dd>-path -r -size -cont</dd>
               <dt>rep</dt><dd>-name -path -id -path_file_ls</dd>
             </dl>
+          </div>
+          <div className="sidebar-block">
+            <h2>notas</h2>
+            <p className="note">El backend corre en <code>localhost:8080</code>. Levántalo con <code>./server</code> desde <code>backend/</code> antes de ejecutar comandos aquí.</p>
           </div>
         </aside>
       </main>

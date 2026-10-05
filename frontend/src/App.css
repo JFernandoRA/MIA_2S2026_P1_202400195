@@ -87,6 +87,32 @@
   font-size: 12px;
 }
 
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+}
+
+.stat::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.stat-ok { color: var(--green); }
+.stat-err { color: var(--red); }
+
 .editor {
   flex: 1;
   background: var(--bg-well);

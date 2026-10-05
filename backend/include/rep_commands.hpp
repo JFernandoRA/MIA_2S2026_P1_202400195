@@ -309,7 +309,19 @@ inline void renderTreeInode(FSContext& ctx, int inodeIndex, const std::string& d
     }
     dot << "</table>>]\n";
 
-    if (inode.i_type != '0') return; // archivo: sus bloques se dibujan pero no tienen hijos
+    if (inode.i_type != '0') {
+        // Archivo: dibuja las flechas hacia cada uno de sus bloques de
+        // contenido. El bloque en sí (la caja "Bloque N (Archivo)") se
+        // rellena después, en renderTreeFileBlocks, que recorre de una vez
+        // todos los inodos-archivo ya vistos. Sin este bucle, las flechas
+        // nunca se dibujaban y los bloques quedaban flotando sin apuntar a
+        // ningún inodo.
+        for (int b = 0; b < 12; b++) {
+            if (inode.i_block[b] == -1) continue;
+            dot << nodeName << ":e -> block" << inode.i_block[b] << ":w\n";
+        }
+        return;
+    }
 
     for (int b = 0; b < 12; b++) {
         if (inode.i_block[b] == -1) continue;

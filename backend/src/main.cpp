@@ -12,30 +12,38 @@
 using json = nlohmann::json;
 
 // Ejecuta un comando ya parseado
-std::string dispatch(const ParsedCommand& cmd) {
-    if (cmd.name == "mkdisk")  return cmdMkdisk(cmd).message;
-    if (cmd.name == "rmdisk")  return cmdRmdisk(cmd).message;
-    if (cmd.name == "fdisk")   return cmdFdisk(cmd).message;
-    if (cmd.name == "mount")   return cmdMount(cmd).message;
-    if (cmd.name == "mounted") return cmdMounted(cmd).message;
-    if (cmd.name == "mkfs")    return cmdMkfs(cmd).message;
-    if (cmd.name == "login")   return cmdLogin(cmd).message;
-    if (cmd.name == "logout")  return cmdLogout(cmd).message;
-    if (cmd.name == "mkgrp")   return cmdMkgrp(cmd).message;
-    if (cmd.name == "rmgrp")   return cmdRmgrp(cmd).message;
-    if (cmd.name == "mkusr")   return cmdMkusr(cmd).message;
-    if (cmd.name == "rmusr")   return cmdRmusr(cmd).message;
-    if (cmd.name == "chgrp")   return cmdChgrp(cmd).message;
-    if (cmd.name == "cat")     return cmdCat(cmd).message;
-    if (cmd.name == "mkfile")  return cmdMkfile(cmd).message;
-    if (cmd.name == "mkdir")   return cmdMkdir(cmd).message;
-    if (cmd.name == "rep")     return cmdRep(cmd).message;
+CmdResult dispatch(const ParsedCommand& cmd) {
+    if (cmd.name == "mkdisk")  return cmdMkdisk(cmd);
+    if (cmd.name == "rmdisk")  return cmdRmdisk(cmd);
+    if (cmd.name == "fdisk")   return cmdFdisk(cmd);
+    if (cmd.name == "mount")   return cmdMount(cmd);
+    if (cmd.name == "mounted") return cmdMounted(cmd);
+    if (cmd.name == "mkfs")    return cmdMkfs(cmd);
+    if (cmd.name == "login")   return cmdLogin(cmd);
+    if (cmd.name == "logout")  return cmdLogout(cmd);
+    if (cmd.name == "mkgrp")   return cmdMkgrp(cmd);
+    if (cmd.name == "rmgrp")   return cmdRmgrp(cmd);
+    if (cmd.name == "mkusr")   return cmdMkusr(cmd);
+    if (cmd.name == "rmusr")   return cmdRmusr(cmd);
+    if (cmd.name == "chgrp")   return cmdChgrp(cmd);
+    if (cmd.name == "cat")     return cmdCat(cmd);
+    if (cmd.name == "mkfile")  return cmdMkfile(cmd);
+    if (cmd.name == "mkdir")   return cmdMkdir(cmd);
+    if (cmd.name == "rep")     return cmdRep(cmd);
 
-    return "ERROR: comando \"" + cmd.name + "\" no reconocido";
+    return {false, "ERROR: comando \"" + cmd.name + "\" no reconocido"};
 }
 
-// Procesa un script: varios comandos, uno por línea
-std::string runScript(const std::string& input) {
+struct ScriptResult {
+    std::string output;
+    int ok = 0;
+    int errors = 0;
+};
+
+// Procesa un script: varios comandos, uno por línea.
+// Los comentarios y las líneas en blanco no cuentan como comando ejecutado.
+ScriptResult runScript(const std::string& input) {
+    ScriptResult result;
     std::ostringstream output;
     std::istringstream stream(input);
     std::string line;
@@ -56,13 +64,17 @@ std::string runScript(const std::string& input) {
         ParsedCommand cmd = parseCommand(trimmed);
         if (!cmd.ok) {
             output << "ERROR: " << cmd.error << "\n";
+            result.errors++;
             continue;
         }
 
-        output << dispatch(cmd) << "\n";
+        CmdResult res = dispatch(cmd);
+        output << res.message << "\n";
+        if (res.success) result.ok++; else result.errors++;
     }
 
-    return output.str();
+    result.output = output.str();
+    return result;
 }
 
 int main() {
@@ -88,10 +100,13 @@ int main() {
         try {
             json body = json::parse(req.body);
             std::string commands = body.value("commands", "");
-            std::string output = runScript(commands);
+            ScriptResult result = runScript(commands);
 
             json resp;
-            resp["output"] = output;
+            resp["output"] = result.output;
+            resp["ok"] = result.ok;
+            resp["errors"] = result.errors;
+            resp["total"] = result.ok + result.errors;
             res.set_content(resp.dump(), "application/json");
         } catch (const std::exception& e) {
             json err;
